@@ -1,5 +1,2 @@
-## Author
-- @Xinatory501
+# cartame
 
-## Contributors
-- @dukiq
