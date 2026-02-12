@@ -24,7 +24,7 @@ class ThreadService:
         user_repo: UserRepository
     ) -> Optional[int]:
         try:
-            user_display = f"@{username}" if username else f"{first_name or 'User'} (ID: {user_id})"
+            user_display = first_name or f"User {user_id}"
             thread_name = f"🆘 {user_display}"
 
             forum_topic = await self.bot.create_forum_topic(
@@ -71,7 +71,14 @@ class ThreadService:
             full_text = prefix + text
 
             keyboard = None
-            if add_ai_button and user_id:
+            if from_user and user_id:
+                keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(
+                        text="🚫 Заблокировать пользователя навсегда",
+                        callback_data=f"ban_user_{user_id}"
+                    )]
+                ])
+            elif add_ai_button and user_id:
                 keyboard = InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(
                         text="🤖 Ответить с AI",

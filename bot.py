@@ -46,10 +46,6 @@ async def main():
     dp.include_router(start.router)
     dp.include_router(admin_main.router)
 
-    dp.include_router(chat.router)
-    dp.include_router(menu.router)
-    dp.include_router(settings_handler.router)
-
     dp.include_router(api_keys.router)
     dp.include_router(antiflood_settings.router)
     dp.include_router(user_management.router)
@@ -57,6 +53,10 @@ async def main():
     dp.include_router(training.router)
     dp.include_router(database_backup.router)
     dp.include_router(reports.router)
+
+    dp.include_router(chat.router)
+    dp.include_router(menu.router)
+    dp.include_router(settings_handler.router)
 
     dp.include_router(support.router)
 

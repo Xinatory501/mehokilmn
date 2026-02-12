@@ -12,6 +12,7 @@ from database.repository import (
 )
 from locales.loader import get_text
 from states.user_states import UserStates
+from states.admin_states import AdminStates
 from services.ai_service import AIService
 from services.thread_service import ThreadService
 from keyboards.menu import get_try_ai_again_keyboard, get_main_menu_keyboard
@@ -169,8 +170,8 @@ async def handle_chat_message(message: Message, state: FSMContext):
                     user.thread_id = thread_id
 
         if user.thread_id:
-            await thread_service.send_to_thread(user.thread_id, user_message, from_user=True)
-            await thread_service.send_to_thread(user.thread_id, response_text, from_user=False)
+            await thread_service.send_to_thread(user.thread_id, user_message, from_user=True, user_id=user_id)
+            await thread_service.send_to_thread(user.thread_id, response_text, from_user=False, user_id=user_id)
 
 @router.message(UserStates.chatting)
 async def handle_non_text_message(message: Message):
@@ -204,10 +205,13 @@ async def try_ai_again(callback: CallbackQuery):
         await callback.answer("❌ AI все еще недоступен. Попробуйте позже.", show_alert=True)
 
 @router.message(~StateFilter(UserStates.chatting), F.text)
-async def handle_text_outside_chat(message: Message):
-    # Игнорировать сообщения из группы поддержки
+async def handle_text_outside_chat(message: Message, state: FSMContext):
     from config import settings
     if message.chat.id == settings.SUPPORT_GROUP_ID:
+        return
+
+    current_state = await state.get_state()
+    if current_state and current_state.startswith("AdminStates:"):
         return
 
     user_id = message.from_user.id

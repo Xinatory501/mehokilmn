@@ -146,7 +146,6 @@ async def ai_reply_handler(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("resend_to_ai_"), F.message.chat.id == settings.SUPPORT_GROUP_ID)
 async def resend_to_ai_handler(callback: CallbackQuery):
-    # Check if user is admin
     async with get_session() as session:
         user_repo = UserRepository(session)
         admin = await user_repo.get_by_id(callback.from_user.id)
@@ -155,9 +154,8 @@ async def resend_to_ai_handler(callback: CallbackQuery):
             await callback.answer("❌ Только администраторы могут использовать эту кнопку", show_alert=True)
             return
 
-    user_id = int(callback.data.split("_")[3])
+        user_id = int(callback.data.split("_")[3])
 
-    async with get_session() as session:
         from sqlalchemy import select
         from database.models import User
 
@@ -171,95 +169,22 @@ async def resend_to_ai_handler(callback: CallbackQuery):
             return
 
         chat_repo = ChatRepository(session)
-        training_repo = TrainingRepository(session)
 
-        active_session = await chat_repo.get_active_session(user_id)
-        if not active_session:
-            await callback.answer("❌ Нет активной сессии", show_alert=True)
-            return
+        await chat_repo.activate_ai(user_id)
 
-        history = await chat_repo.get_session_history(active_session.id, limit=30)
-        messages = [{"role": h.role, "content": h.content} for h in history if h.role in ["user", "assistant", "support"]]
+        thread_id = user.thread_id
 
-        if len(messages) > 20:
-            old_messages = messages[:len(messages)//2]
-            recent_messages = messages[len(messages)//2:]
-            old_summary = "Ранее обсуждались темы: "
-            user_questions = [m["content"][:50] + "..." for m in old_messages if m["role"] == "user"]
-            old_summary += "; ".join(user_questions[:5]) if user_questions else "различные вопросы"
-            context_summary = old_summary
-            messages = [{"role": "system", "content": old_summary}] + recent_messages
-        else:
-            context_summary = None
-
-    ai_service = await AIService.get_service()
-    if not ai_service:
-        await callback.answer("❌ AI недоступен", show_alert=True)
-        return
-
-    await callback.answer("⏳ Генерирую ответ с помощью AI...")
-
-    async with get_session() as session:
-        training_repo = TrainingRepository(session)
-        system_prompt = await ai_service.get_system_prompt(training_repo, user.language)
-
-    response = await ai_service.get_response(messages, system_prompt)
-
-    thread_id = user.thread_id
-    if context_summary:
         await callback.message.bot.send_message(
             chat_id=settings.SUPPORT_GROUP_ID,
             message_thread_id=thread_id,
-            text=f"📝 <b>Контекст (сжатый):</b>\n{context_summary}",
+            text=f"🤖 <b>Пользователь направлен в режим AI</b>\n\nАдминистратор {callback.from_user.first_name} включил автоматические ответы AI для пользователя.",
             parse_mode="HTML"
         )
 
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(
-                text="🔄 Направить в нейросеть обратно",
-                callback_data=f"resend_to_ai_{user_id}"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="🚫 Заблокировать пользователя навсегда",
-                callback_data=f"ban_user_{user_id}"
-            )
-        ]
-    ])
-
-    await callback.message.bot.send_message(
-        chat_id=settings.SUPPORT_GROUP_ID,
-        message_thread_id=thread_id,
-        text=f"🤖 <b>Отправлено с помощью AI:</b>\n\n{response}",
-        parse_mode="HTML",
-        reply_markup=keyboard
-    )
-
-    support_text = get_text("support_response", user.language).format(text=response)
-    try:
-        await callback.message.bot.send_message(
-            chat_id=user.id,
-            text=support_text,
-            parse_mode="HTML"
-        )
-
-        async with get_session() as session:
-            chat_repo = ChatRepository(session)
-            await chat_repo.add_message(
-                user.id,
-                "support",
-                response,
-                is_ai_handled=False
-            )
-
-    except Exception as e:
-        await callback.message.answer(f"❌ Не удалось отправить сообщение пользователю: {e}")
+    await callback.answer("✅ AI активирован для пользователя", show_alert=True)
 
 @router.callback_query(F.data.startswith("ban_user_"), F.message.chat.id == settings.SUPPORT_GROUP_ID)
 async def ban_user_handler(callback: CallbackQuery):
-    # Check if user is admin
     async with get_session() as session:
         user_repo = UserRepository(session)
         admin = await user_repo.get_by_id(callback.from_user.id)
@@ -282,10 +207,8 @@ async def ban_user_handler(callback: CallbackQuery):
             await callback.answer("❌ Пользователь не найден", show_alert=True)
             return
 
-        # Ban user permanently
         await user_repo.ban_user(user_id, None)
 
-        # Send message to topic
         thread_id = user.thread_id
         await callback.message.bot.send_message(
             chat_id=settings.SUPPORT_GROUP_ID,
@@ -294,7 +217,6 @@ async def ban_user_handler(callback: CallbackQuery):
             parse_mode="HTML"
         )
 
-        # Send message to user
         banned_text = get_text("banned", user.language)
         try:
             await callback.message.bot.send_message(
@@ -302,7 +224,7 @@ async def ban_user_handler(callback: CallbackQuery):
                 text=banned_text
             )
         except Exception:
-            pass  # User may have blocked the bot
+            pass
 
         await callback.answer("✅ Пользователь заблокирован", show_alert=True)
 
@@ -320,12 +242,11 @@ async def handle_support_message(message: Message):
         from sqlalchemy import select
         from database.models import User
 
-        # Проверка, что отправитель - админ
         user_repo = UserRepository(session)
         sender = await user_repo.get_by_id(message.from_user.id)
 
         if not sender or sender.role != "admin":
-            return  # Игнорировать сообщения от не-админов
+            return
 
         result = await session.execute(
             select(User).where(User.thread_id == thread_id)
