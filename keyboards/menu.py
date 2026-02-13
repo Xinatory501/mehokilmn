@@ -42,7 +42,7 @@ def get_try_ai_again_keyboard(language: str) -> InlineKeyboardMarkup:
     keyboard = [
         [
             InlineKeyboardButton(
-                text="🔄 Попробовать AI снова",
+                text="Попробовать AI снова",
                 callback_data="try_ai_again"
             )
         ],

@@ -166,7 +166,11 @@ CRITICAL RULES - FOLLOW STRICTLY:
 - No corrupted text, no artifacts, no random characters
 - Be professional and clear
 - Never make up information - only answer based on what you know
-- If you don't understand or can't help - say so clearly and suggest calling a human
+
+OFF-TOPIC QUESTIONS HANDLING:
+- If user asks about things NOT related to CartaMe (AI models, billing, programming, weather, politics, recipes, etc.) - respond with EXACTLY: "ignore_offtopic"
+- Answer ONLY questions about: CartaMe service, discount cards, QR codes, stores, bonuses, how to use the app, registration, support
+- For general greetings or "what is this service" - DO answer politely about CartaMe
 
 TEXT QUALITY REQUIREMENTS:
 - Every word must be a valid {language} word
@@ -174,9 +178,12 @@ TEXT QUALITY REQUIREMENTS:
 - Proper grammar and sentence structure
 - Complete, coherent sentences
 
-SPECIAL COMMAND:
-- If user asks for human support or you cannot help - include EXACTLY: "call_people"
-- When using call_people, ask user to describe the situation for the support team.
+SPECIAL COMMAND "call_people":
+- Add the word "call_people" to your response ONLY if:
+  * There is a critical technical issue you cannot solve
+  * User reports a serious bug or problem with payment/security
+- When adding call_people: write ONE short sentence maximum, then add "call_people". NO long explanations, NO "please hold", NO "I will connect you", NO "please provide details" - just one short sentence.
+- DO NOT use call_people for off-topic questions or general information requests.
 
 RESPONSE LANGUAGE: {language}
 
@@ -189,8 +196,9 @@ RESPONSE LANGUAGE: {language}
 
     async def is_relevant_question(self, question: str) -> bool:
         relevance_messages = [
-            {"role": "system", "content": """Ты - фильтр вопросов для CartaMe (приложение для магазинов и товаров).
-Определи, относится ли вопрос к теме: магазины, товары, покупки, заказы, приложение, сервис.
+            {"role": "system", "content": """Ты - фильтр вопросов для CartaMe (сервис дисконтных карт).
+Определи, относится ли вопрос к теме CartaMe: дисконтные карты, QR-коды, магазины, скидки, бонусы, приложение, регистрация, техподдержка.
+Ответь "no" если вопрос про: AI модели, биллинг модели, программирование, погоду, политику, рецепты, общие темы не про CartaMe.
 Ответь ТОЛЬКО "yes" или "no"."""},
             {"role": "user", "content": f"Вопрос: {question}"}
         ]

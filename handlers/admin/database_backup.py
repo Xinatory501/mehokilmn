@@ -19,8 +19,8 @@ async def show_database_menu(callback: CallbackQuery):
 """
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📥 Скачать бекап", callback_data="download_backup")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_menu")]
+        [InlineKeyboardButton(text="Скачать бекап", callback_data="download_backup")],
+        [InlineKeyboardButton(text="Назад", callback_data="admin_menu")]
     ])
 
     await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")

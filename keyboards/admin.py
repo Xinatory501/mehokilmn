@@ -9,7 +9,7 @@ def get_admin_menu_keyboard(language: str) -> InlineKeyboardMarkup:
             callback_data="admin_api_keys"
         )],
         [InlineKeyboardButton(
-            text="⚡ Настройки антифлуда",
+            text="Настройки антифлуда",
             callback_data="admin_antiflood"
         )],
         [InlineKeyboardButton(
@@ -44,23 +44,23 @@ def get_user_actions_keyboard(language: str, user_id: int, is_banned: bool, is_a
 
     if is_banned:
         keyboard.append([InlineKeyboardButton(
-            text="✅ Разбанить",
+            text="Разбанить",
             callback_data=f"admin_unban_{user_id}"
         )])
     else:
         keyboard.append([InlineKeyboardButton(
-            text="❌ Забанить",
+            text="Забанить",
             callback_data=f"admin_ban_{user_id}"
         )])
 
     if is_admin:
         keyboard.append([InlineKeyboardButton(
-            text="👤 Снять админа",
+            text="Снять админа",
             callback_data=f"admin_revoke_{user_id}"
         )])
     else:
         keyboard.append([InlineKeyboardButton(
-            text="👨‍💼 Дать админа",
+            text="Дать админа",
             callback_data=f"admin_grant_{user_id}"
         )])
 

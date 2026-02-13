@@ -10,6 +10,7 @@ from database.repository import (
 )
 from services.ai_service import AIService
 from services.thread_service import ThreadService
+from locales.loader import get_text
 import re
 
 logger = logging.getLogger(__name__)
@@ -103,28 +104,39 @@ class PendingService:
         ):
             response_text += chunk
 
+        if not response_text or response_text.strip() == "":
+            logger.warning(f"AI returned empty response for pending request {request.id}")
+            return
+
+        if "ignore_offtopic" in response_text.lower():
+            logger.info(f"Pending request {request.id} marked as offtopic, skipping")
+            return
+
         if "call_people" in response_text.lower():
             async with get_session() as session:
                 chat_repo = ChatRepository(session)
                 await chat_repo.deactivate_ai(request.user_id)
 
-            clean_response = response_text.replace("call_people", "").replace("CALL_PEOPLE", "").strip()
-            html_response = markdown_to_html(clean_response)
+            clean_response = response_text.replace("call_people", "").replace("CALL_PEOPLE", "").replace("ignore_offtopic", "").replace("IGNORE_OFFTOPIC", "").strip()
+
+            if clean_response:
+                html_response = markdown_to_html(clean_response)
+                await bot.send_message(
+                    chat_id=request.user_id,
+                    text=html_response,
+                    parse_mode="HTML"
+                )
 
             await bot.send_message(
                 chat_id=request.user_id,
-                text=html_response,
-                parse_mode="HTML"
-            )
-            await bot.send_message(
-                chat_id=request.user_id,
-                text="👤 <b>Человек вызван</b>\n\nНапишите ситуацию, она будет передана в группу поддержки.",
+                text=get_text("human_called", language),
                 parse_mode="HTML"
             )
 
             async with get_session() as session:
                 chat_repo = ChatRepository(session)
-                await chat_repo.add_message(request.user_id, "assistant", clean_response, None)
+                if clean_response:
+                    await chat_repo.add_message(request.user_id, "assistant", clean_response, None)
 
             if user.thread_id:
                 thread_service = ThreadService(bot)
@@ -136,7 +148,14 @@ class PendingService:
                     parse_mode="HTML"
                 )
         else:
-            html_response = markdown_to_html(response_text)
+                                                
+            clean_text = response_text.replace("ignore_offtopic", "").replace("IGNORE_OFFTOPIC", "").strip()
+
+            if not clean_text:
+                logger.warning(f"AI response became empty after cleaning for pending request {request.id}")
+                return
+
+            html_response = markdown_to_html(clean_text)
             response_msg = await bot.send_message(
                 chat_id=request.user_id,
                 text=html_response,
@@ -145,9 +164,9 @@ class PendingService:
 
             async with get_session() as session:
                 chat_repo = ChatRepository(session)
-                await chat_repo.add_message(request.user_id, "assistant", response_text, response_msg.message_id)
+                await chat_repo.add_message(request.user_id, "assistant", clean_text, response_msg.message_id)
 
             if user.thread_id:
                 thread_service = ThreadService(bot)
-                await thread_service.send_to_thread(user.thread_id, request.message_text, from_user=True)
-                await thread_service.send_to_thread(user.thread_id, response_text, from_user=False)
+                await thread_service.send_to_thread(user.thread_id, request.message_text, from_user=True, user_id=request.user_id)
+                await thread_service.send_to_thread(user.thread_id, clean_text, from_user=False, user_id=request.user_id)

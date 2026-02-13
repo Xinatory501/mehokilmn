@@ -30,10 +30,10 @@ async def show_antiflood_settings(callback: CallbackQuery):
 """
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔢 Изменить порог", callback_data="change_antiflood_threshold")],
-        [InlineKeyboardButton(text="⏱ Изменить временное окно", callback_data="change_antiflood_window")],
-        [InlineKeyboardButton(text="⏰ Изменить длительность бана", callback_data="change_autoban_duration")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_menu")]
+        [InlineKeyboardButton(text="Изменить порог", callback_data="change_antiflood_threshold")],
+        [InlineKeyboardButton(text="Изменить временное окно", callback_data="change_antiflood_window")],
+        [InlineKeyboardButton(text="Изменить длительность бана", callback_data="change_autoban_duration")],
+        [InlineKeyboardButton(text="Назад", callback_data="admin_menu")]
     ])
 
     await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")

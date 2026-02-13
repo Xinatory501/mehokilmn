@@ -11,8 +11,8 @@ router = Router()
 
 @router.callback_query(F.data == "settings_language")
 async def change_language(callback: CallbackQuery):
-    await callback.message.edit_text(
-        "Please select your language:",
+    await callback.message.edit_caption(
+        caption="Please select your language:",
         reply_markup=get_language_keyboard()
     )
     await callback.answer()
@@ -26,8 +26,8 @@ async def update_language(callback: CallbackQuery):
         user_repo = UserRepository(session)
         await user_repo.update_language(user_id, language)
 
-    await callback.message.edit_text(
-        get_text("language_changed", language),
+    await callback.message.edit_caption(
+        caption=get_text("language_changed", language),
         reply_markup=get_main_menu_keyboard(language, has_history=True)
     )
     await callback.answer()

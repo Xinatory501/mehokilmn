@@ -1,7 +1,8 @@
 from aiogram import Router, F
 from aiogram.filters import CommandStart
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, FSInputFile
 from aiogram.fsm.context import FSMContext
+from pathlib import Path
 
 from database.database import get_session
 from database.repository import UserRepository, ConfigRepository
@@ -11,6 +12,7 @@ from locales.loader import get_text
 from services.thread_service import ThreadService
 
 router = Router()
+BANNER_PATH = Path(__file__).resolve().parent.parent / "assets" / "cartame.jpg"
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
@@ -36,18 +38,19 @@ async def cmd_start(message: Message, state: FSMContext):
                 "Please select your language:"
             )
 
-            await message.answer(
-                welcome_text,
+            await message.answer_photo(
+                photo=FSInputFile(BANNER_PATH),
+                caption=welcome_text,
                 reply_markup=get_language_keyboard(),
                 parse_mode="HTML",
-                disable_web_page_preview=True
             )
         else:
             language = user.language
             greeting = get_text("greeting", language)
 
-            await message.answer(
-                greeting,
+            await message.answer_photo(
+                photo=FSInputFile(BANNER_PATH),
+                caption=greeting,
                 reply_markup=get_main_menu_keyboard(language, has_history=True)
             )
 
@@ -76,8 +79,8 @@ async def choose_language(callback: CallbackQuery, state: FSMContext):
 
     greeting = get_text("greeting", language)
 
-    await callback.message.edit_text(
-        greeting,
+    await callback.message.edit_caption(
+        caption=greeting,
         reply_markup=get_main_menu_keyboard(language, has_history=False)
     )
     await callback.answer()

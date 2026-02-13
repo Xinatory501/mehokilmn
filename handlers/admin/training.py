@@ -28,8 +28,8 @@ async def show_training_messages(callback: CallbackQuery):
         text += "Нет обучающих сообщений.\n"
 
     keyboard = [
-        [InlineKeyboardButton(text="➕ Добавить сообщение", callback_data="add_training_msg")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_menu")]
+        [InlineKeyboardButton(text="Добавить сообщение", callback_data="add_training_msg")],
+        [InlineKeyboardButton(text="Назад", callback_data="admin_menu")]
     ]
 
     await callback.message.edit_text(

@@ -545,6 +545,7 @@ class APIKeyRepository:
 
     async def get_available_key(self, provider_id: int) -> Optional[APIKey]:
         now = datetime.utcnow()
+        rate_limit_cooldown = now - timedelta(seconds=60)
         result = await self.session.execute(
             select(APIKey)
             .where(and_(
@@ -557,6 +558,12 @@ class APIKeyRepository:
                         APIKey.limit_reset_at != None,
                         APIKey.limit_reset_at <= now
                     )
+                ),
+                                                                           
+                or_(
+                    APIKey.last_error == None,
+                    ~APIKey.last_error.contains('429'),
+                    APIKey.updated_at <= rate_limit_cooldown
                 )
             ))
             .order_by(
@@ -591,6 +598,7 @@ class APIKeyRepository:
             .values(
                 requests_made=APIKey.requests_made + increment,
                 last_used_at=datetime.utcnow(),
+                last_error=None,                                                
                 updated_at=datetime.utcnow()
             )
         )

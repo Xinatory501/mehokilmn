@@ -25,8 +25,8 @@ async def show_privacy_settings(callback: CallbackQuery):
 
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✏️ Изменить URL", callback_data="change_privacy_url")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_menu")]
+        [InlineKeyboardButton(text="Изменить URL", callback_data="change_privacy_url")],
+        [InlineKeyboardButton(text="Назад", callback_data="admin_menu")]
     ])
 
     await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")

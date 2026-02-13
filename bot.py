@@ -54,11 +54,11 @@ async def main():
     dp.include_router(database_backup.router)
     dp.include_router(reports.router)
 
+    dp.include_router(support.router)
+
     dp.include_router(chat.router)
     dp.include_router(menu.router)
     dp.include_router(settings_handler.router)
-
-    dp.include_router(support.router)
 
     logger.info("Bot started successfully")
 

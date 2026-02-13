@@ -17,10 +17,10 @@ async def show_reports_menu(callback: CallbackQuery):
 """
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📅 Сегодня", callback_data="report_today")],
-        [InlineKeyboardButton(text="📅 Последние 7 дней", callback_data="report_week")],
-        [InlineKeyboardButton(text="📅 Последние 30 дней", callback_data="report_month")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_menu")]
+        [InlineKeyboardButton(text="Сегодня", callback_data="report_today")],
+        [InlineKeyboardButton(text="Последние 7 дней", callback_data="report_week")],
+        [InlineKeyboardButton(text="Последние 30 дней", callback_data="report_month")],
+        [InlineKeyboardButton(text="Назад", callback_data="admin_menu")]
     ])
 
     await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")

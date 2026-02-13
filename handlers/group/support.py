@@ -2,6 +2,7 @@
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+import logging
 
 from config import settings
 from database.database import get_session
@@ -9,6 +10,7 @@ from database.repository import UserRepository, ChatRepository, TrainingReposito
 from services.ai_service import AIService
 from locales.loader import get_text
 
+logger = logging.getLogger(__name__)
 router = Router()
 
 @router.message(Command("ai"), F.chat.id == settings.SUPPORT_GROUP_ID)
@@ -39,6 +41,14 @@ async def activate_ai_in_thread(message: Message):
         f"✅ AI активирован для пользователя {user.first_name}\n"
         "Теперь бот снова будет автоматически отвечать."
     )
+
+    try:
+        await message.bot.send_message(
+            chat_id=user.id,
+            text=get_text("ai_activated", user.language),
+        )
+    except Exception as e:
+        logger.error(f"Failed to notify user {user.id} about AI activation: {e}")
 
 @router.callback_query(F.data.startswith("ai_reply_"), F.message.chat.id == settings.SUPPORT_GROUP_ID)
 async def ai_reply_handler(callback: CallbackQuery):
@@ -104,13 +114,13 @@ async def ai_reply_handler(callback: CallbackQuery):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(
-                text="🔄 Направить в нейросеть обратно",
+                text="Направить в нейросеть обратно",
                 callback_data=f"resend_to_ai_{user_id}"
             )
         ],
         [
             InlineKeyboardButton(
-                text="🚫 Заблокировать пользователя навсегда",
+                text="Заблокировать пользователя навсегда",
                 callback_data=f"ban_user_{user_id}"
             )
         ]
@@ -181,6 +191,14 @@ async def resend_to_ai_handler(callback: CallbackQuery):
             parse_mode="HTML"
         )
 
+        try:
+            await callback.message.bot.send_message(
+                chat_id=user_id,
+                text=get_text("ai_activated", user.language),
+            )
+        except Exception as e:
+            logger.error(f"Failed to notify user {user_id} about AI activation: {e}")
+
     await callback.answer("✅ AI активирован для пользователя", show_alert=True)
 
 @router.callback_query(F.data.startswith("ban_user_"), F.message.chat.id == settings.SUPPORT_GROUP_ID)
@@ -228,14 +246,26 @@ async def ban_user_handler(callback: CallbackQuery):
 
         await callback.answer("✅ Пользователь заблокирован", show_alert=True)
 
-@router.message(F.chat.id == settings.SUPPORT_GROUP_ID, F.message_thread_id, F.reply_to_message)
+@router.message(F.chat.id == settings.SUPPORT_GROUP_ID, F.message_thread_id)
 async def handle_support_message(message: Message):
     thread_id = message.message_thread_id
 
+    logger.info(f"Support message received in thread {thread_id} from user {message.from_user.id}")
+
     if not thread_id:
+        logger.warning("No thread_id, skipping")
         return
 
     if message.from_user.is_bot:
+        logger.info("Message from bot, skipping")
+        return
+
+    if message.text and message.text.startswith('/'):
+        logger.info(f"Command detected: {message.text}, skipping")
+        return
+
+    if not message.text or message.text.strip() == "":
+        logger.info("Message without text, skipping")
         return
 
     async with get_session() as session:
@@ -245,7 +275,12 @@ async def handle_support_message(message: Message):
         user_repo = UserRepository(session)
         sender = await user_repo.get_by_id(message.from_user.id)
 
-        if not sender or sender.role != "admin":
+        if not sender:
+            logger.warning(f"Sender {message.from_user.id} not found in database")
+            return
+
+        if sender.role != "admin":
+            logger.warning(f"Sender {message.from_user.id} is not admin (role: {sender.role})")
             return
 
         result = await session.execute(
@@ -254,7 +289,10 @@ async def handle_support_message(message: Message):
         user = result.scalar_one_or_none()
 
         if not user:
+            logger.warning(f"No user found with thread_id {thread_id}")
             return
+
+        logger.info(f"Found user {user.id} for thread {thread_id}, sending message")
 
         support_text = get_text("support_response", user.language).format(
             text=message.text or "[Медиафайл]"
@@ -266,6 +304,7 @@ async def handle_support_message(message: Message):
                 text=support_text,
                 parse_mode="HTML"
             )
+            logger.info(f"Successfully sent support message to user {user.id}")
 
             chat_repo = ChatRepository(session)
             await chat_repo.add_message(
@@ -276,4 +315,5 @@ async def handle_support_message(message: Message):
             )
 
         except Exception as e:
+            logger.error(f"Failed to send message to user {user.id}: {e}")
             await message.answer(f"❌ Не удалось отправить сообщение: {e}")
