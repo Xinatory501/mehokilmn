@@ -5,16 +5,16 @@ from aiogram import Bot
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.exceptions import TelegramAPIError
 
-from config import settings
 from database.repository import UserRepository
+from database.database import current_support_group_id
 
 logger = logging.getLogger(__name__)
 
 class ThreadService:
 
-    def __init__(self, bot: Bot):
+    def __init__(self, bot: Bot, support_group_id: int = None):
         self.bot = bot
-        self.support_group_id = settings.SUPPORT_GROUP_ID
+        self.support_group_id = support_group_id if support_group_id is not None else current_support_group_id.get()
 
     async def create_thread_for_user(
         self,

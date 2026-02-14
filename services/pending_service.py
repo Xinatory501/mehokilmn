@@ -1,7 +1,7 @@
 import logging
 from aiogram import Bot
 
-from database.database import get_session
+from database.database import get_session, current_support_group_id
 from database.repository import (
     PendingRequestRepository,
     ChatRepository,
@@ -140,9 +140,8 @@ class PendingService:
 
             if user.thread_id:
                 thread_service = ThreadService(bot)
-                from config import settings
                 await bot.send_message(
-                    chat_id=settings.SUPPORT_GROUP_ID,
+                    chat_id=current_support_group_id.get(),
                     message_thread_id=user.thread_id,
                     text=f"🚨 <b>ВЫЗВАН ЧЕЛОВЕК</b>\n\nПользователь запросил поддержку человека.\nОжидаем описание ситуации.",
                     parse_mode="HTML"

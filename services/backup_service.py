@@ -3,10 +3,19 @@ import shutil
 import os
 from datetime import datetime
 
+
+def _current_db_path() -> str:
+    from database.database import current_bot_db_url
+    url = current_bot_db_url.get()
+    if url:
+        return url.replace("sqlite+aiosqlite:///", "")
+    return "data/bot1.db"
+
+
 class BackupService:
 
-    def __init__(self, db_path: str = "cartame_bot.db"):
-        self.db_path = db_path
+    def __init__(self, db_path: str = None):
+        self.db_path = db_path or _current_db_path()
 
     async def create_backup(self) -> str:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

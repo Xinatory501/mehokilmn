@@ -1,9 +1,9 @@
-from aiogram import Router, F
+from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.filters import StateFilter
 
-from database.database import get_session
+from database.database import get_session, current_support_group_id
 from database.repository import (
     UserRepository,
     ChatRepository,
@@ -29,7 +29,7 @@ HUMAN_REQUEST_KEYWORDS = [
     "нужен оператор", "нужен человек", "хочу оператора", "хочу человека",
     "соедини с оператором", "свяжи с оператором", "оператор", "operator",
     "please call", "please connect", "connect human", "human please",
-    "call peple", "call pepole", "call poeple",            
+    "call peple", "call pepole", "call poeple",
 ]
 
 def is_direct_human_request(text: str) -> bool:
@@ -42,6 +42,73 @@ def markdown_to_html(text: str) -> str:
     text = re.sub(r'`([^`]+?)`', r'<code>\1</code>', text, flags=re.UNICODE)
     text = re.sub(r'\[([^\]]+?)\]\(([^\)]+?)\)', r'<a href="\2">\1</a>', text, flags=re.UNICODE)
     return text
+
+
+async def _ensure_thread(bot: Bot, user_id: int, user, tg_username: str = None, tg_first_name: str = None) -> int | None:
+    """Возвращает thread_id пользователя, создавая топик если его нет.
+    tg_username/tg_first_name — актуальные данные из Telegram (приоритет над БД)."""
+    thread_id = user.thread_id
+    if not thread_id:
+        username = tg_username if tg_username is not None else user.username
+        first_name = tg_first_name if tg_first_name is not None else user.first_name
+        async with get_session() as session:
+            user_repo = UserRepository(session)
+            thread_service = ThreadService(bot)
+            thread_id = await thread_service.create_thread_for_user(
+                user_id, username, first_name, user_repo
+            )
+    return thread_id
+
+
+async def _get_group_mentions(bot: Bot, group_id: int) -> str:
+    """Возвращает строку с упоминаниями всех не-ботов из администраторов группы."""
+    try:
+        admins = await bot.get_chat_administrators(chat_id=group_id)
+        mentions = []
+        for member in admins:
+            if member.user.is_bot:
+                continue
+            if member.user.username:
+                mentions.append(f"@{member.user.username}")
+            else:
+                name = member.user.first_name or str(member.user.id)
+                mentions.append(f'<a href="tg://user?id={member.user.id}">{name}</a>')
+        return " ".join(mentions)
+    except Exception as e:
+        logger.warning(f"Could not fetch group admins for mentions: {e}")
+        return ""
+
+
+async def _notify_human_needed(bot: Bot, user_id: int, user, tg_username: str = None, tg_first_name: str = None) -> None:
+    """Отправляет уведомление в топик о вызове человека, создавая топик при необходимости."""
+    from aiogram.exceptions import TelegramAPIError
+
+    thread_id = await _ensure_thread(bot, user_id, user, tg_username=tg_username, tg_first_name=tg_first_name)
+    if not thread_id:
+        logger.warning(f"Could not get/create thread for user {user_id}, skipping human notification")
+        return
+
+    group_id = current_support_group_id.get()
+    mentions = await _get_group_mentions(bot, group_id)
+    mention_line = f"\n\n👥 {mentions}" if mentions else ""
+
+    try:
+        await bot.send_message(
+            chat_id=group_id,
+            message_thread_id=thread_id,
+            text=f"🚨 <b>ВЫЗВАН ЧЕЛОВЕК</b>\n\nПользователь запросил поддержку человека.\nОжидаем описание ситуации.{mention_line}",
+            parse_mode="HTML"
+        )
+    except TelegramAPIError as e:
+        error_msg = str(e).lower()
+        if any(k in error_msg for k in ['thread not found', 'topic closed', 'topic not found', 'message thread not found']):
+            logger.warning(f"Thread {thread_id} gone for user {user_id}, clearing and skipping")
+            async with get_session() as session:
+                user_repo = UserRepository(session)
+                await user_repo.update_thread_id(user_id, None)
+        else:
+            logger.error(f"Failed to send human notification to thread {thread_id}: {e}")
+
 
 @router.message(UserStates.chatting, F.text)
 async def handle_chat_message(message: Message, state: FSMContext):
@@ -66,10 +133,13 @@ async def handle_chat_message(message: Message, state: FSMContext):
 
         if not active_session.is_ai_active:
             await chat_repo.add_message(user_id, "user", user_message, message.message_id, is_ai_handled=False)
-            if user.thread_id:
+            thread_id = await _ensure_thread(message.bot, user_id, user,
+                                             tg_username=message.from_user.username,
+                                             tg_first_name=message.from_user.first_name)
+            if thread_id:
                 thread_service = ThreadService(message.bot)
                 await thread_service.send_to_thread(
-                    user.thread_id,
+                    thread_id,
                     user_message,
                     from_user=True,
                     user_id=user_id,
@@ -85,23 +155,9 @@ async def handle_chat_message(message: Message, state: FSMContext):
 
         await state.set_state(UserStates.chatting)
         await message.answer(get_text("human_called", language), parse_mode="HTML")
-
-        if user.thread_id:
-            from config import settings
-            from aiogram.exceptions import TelegramAPIError
-            try:
-                await message.bot.send_message(
-                    chat_id=settings.SUPPORT_GROUP_ID,
-                    message_thread_id=user.thread_id,
-                    text="🚨 <b>ВЫЗВАН ЧЕЛОВЕК</b>\n\nПользователь запросил поддержку человека.\nОжидаем описание ситуации.",
-                    parse_mode="HTML"
-                )
-            except TelegramAPIError as e:
-                error_msg = str(e).lower()
-                if any(k in error_msg for k in ['thread not found', 'topic closed', 'topic not found', 'message thread not found']):
-                    async with get_session() as session:
-                        user_repo = UserRepository(session)
-                        await user_repo.update_thread_id(user_id, None)
+        await _notify_human_needed(message.bot, user_id, user,
+                                   tg_username=message.from_user.username,
+                                   tg_first_name=message.from_user.first_name)
         return
 
     ai_service = await AIService.get_service()
@@ -183,33 +239,14 @@ async def handle_chat_message(message: Message, state: FSMContext):
         async with get_session() as session:
             chat_repo = ChatRepository(session)
             pending_repo = PendingRequestRepository(session)
-                                                                      
             if clean_response:
                 await chat_repo.add_message(user_id, "assistant", clean_response, None)
             await pending_repo.mark_completed(pending_request.id)
 
-        if user.thread_id:
-            from config import settings
-            from aiogram.exceptions import TelegramAPIError
-            try:
-                await message.bot.send_message(
-                    chat_id=settings.SUPPORT_GROUP_ID,
-                    message_thread_id=user.thread_id,
-                    text=f"🚨 <b>ВЫЗВАН ЧЕЛОВЕК</b>\n\nПользователь запросил поддержку человека.\nОжидаем описание ситуации.",
-                    parse_mode="HTML"
-                )
-            except TelegramAPIError as e:
-                error_msg = str(e).lower()
-                                                                     
-                if any(keyword in error_msg for keyword in ['thread not found', 'topic closed', 'topic not found', 'message thread not found']):
-                    logger.warning(f"Thread {user.thread_id} deleted, clearing thread_id for user {user_id}")
-                    async with get_session() as session:
-                        user_repo = UserRepository(session)
-                        await user_repo.update_thread_id(user_id, None)
-                else:
-                    logger.error(f"Failed to send human call notification to thread: {e}")
+        await _notify_human_needed(message.bot, user_id, user,
+                                   tg_username=message.from_user.username,
+                                   tg_first_name=message.from_user.first_name)
     else:
-                                                                                             
         clean_text = response_text.replace("ignore_offtopic", "").replace("IGNORE_OFFTOPIC", "").strip()
 
         if not clean_text:
@@ -267,8 +304,7 @@ async def try_ai_again(callback: CallbackQuery):
 
 @router.message(~StateFilter(UserStates.chatting), F.text)
 async def handle_text_outside_chat(message: Message, state: FSMContext):
-    from config import settings
-    if message.chat.id == settings.SUPPORT_GROUP_ID:
+    if message.chat.id == current_support_group_id.get():
         return
 
     current_state = await state.get_state()

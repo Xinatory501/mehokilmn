@@ -13,9 +13,8 @@ from database.models import (
     FloodLog,
     AdminAction,
     Metric,
-    AIProvider,
-    APIKey
 )
+from database.shared_models import AIProvider, APIKey
 
 class UserRepository:
 
@@ -681,14 +680,14 @@ class AIModelRepository:
         self.session = session
 
     async def get_by_id(self, model_id: int):
-        from database.models import AIModel
+        from database.shared_models import AIModel
         result = await self.session.execute(
             select(AIModel).where(AIModel.id == model_id)
         )
         return result.scalar_one_or_none()
 
     async def get_by_provider(self, provider_id: int):
-        from database.models import AIModel
+        from database.shared_models import AIModel
         result = await self.session.execute(
             select(AIModel)
             .where(AIModel.provider_id == provider_id)
@@ -697,7 +696,7 @@ class AIModelRepository:
         return list(result.scalars().all())
 
     async def get_default_model(self, provider_id: int):
-        from database.models import AIModel
+        from database.shared_models import AIModel
         result = await self.session.execute(
             select(AIModel)
             .where(and_(
@@ -709,7 +708,7 @@ class AIModelRepository:
         return result.scalar_one_or_none()
 
     async def get_available_model(self, provider_id: int):
-        from database.models import AIModel
+        from database.shared_models import AIModel
         default = await self.get_default_model(provider_id)
         if default:
             return default
@@ -732,7 +731,7 @@ class AIModelRepository:
         display_name: Optional[str] = None,
         is_default: bool = False
     ):
-        from database.models import AIModel
+        from database.shared_models import AIModel
 
         if is_default:
             await self.session.execute(
@@ -753,7 +752,7 @@ class AIModelRepository:
         return model
 
     async def set_default(self, model_id: int):
-        from database.models import AIModel
+        from database.shared_models import AIModel
         model = await self.get_by_id(model_id)
         if not model:
             return
@@ -772,7 +771,7 @@ class AIModelRepository:
         await self.session.commit()
 
     async def record_error(self, model_id: int, error_message: str):
-        from database.models import AIModel
+        from database.shared_models import AIModel
         await self.session.execute(
             update(AIModel)
             .where(AIModel.id == model_id)
@@ -785,7 +784,7 @@ class AIModelRepository:
         await self.session.commit()
 
     async def deactivate(self, model_id: int):
-        from database.models import AIModel
+        from database.shared_models import AIModel
         await self.session.execute(
             update(AIModel)
             .where(AIModel.id == model_id)
@@ -794,7 +793,7 @@ class AIModelRepository:
         await self.session.commit()
 
     async def activate(self, model_id: int):
-        from database.models import AIModel
+        from database.shared_models import AIModel
         await self.session.execute(
             update(AIModel)
             .where(AIModel.id == model_id)
@@ -808,14 +807,14 @@ class AIModelRepository:
         await self.session.commit()
 
     async def delete(self, model_id: int):
-        from database.models import AIModel
+        from database.shared_models import AIModel
         await self.session.execute(
             delete(AIModel).where(AIModel.id == model_id)
         )
         await self.session.commit()
 
     async def update_last_used(self, model_id: int):
-        from database.models import AIModel
+        from database.shared_models import AIModel
         await self.session.execute(
             update(AIModel)
             .where(AIModel.id == model_id)

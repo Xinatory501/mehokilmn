@@ -3,7 +3,7 @@ from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 
-from database.database import get_session
+from database.database import get_session, get_shared_session
 from database.repository import AIProviderRepository, APIKeyRepository, AIModelRepository, AdminRepository
 from states.admin_states import AdminStates
 
@@ -11,7 +11,7 @@ router = Router()
 
 @router.callback_query(F.data == "admin_api_keys")
 async def show_providers_list(callback: CallbackQuery):
-    async with get_session() as session:
+    async with get_shared_session() as session:
         ai_provider_repo = AIProviderRepository(session)
         providers = await ai_provider_repo.get_all()
 
@@ -55,7 +55,7 @@ async def show_providers_list(callback: CallbackQuery):
 async def show_provider_detail(callback: CallbackQuery):
     provider_id = int(callback.data.split("_")[1])
 
-    async with get_session() as session:
+    async with get_shared_session() as session:
         ai_provider_repo = AIProviderRepository(session)
         api_key_repo = APIKeyRepository(session)
         model_repo = AIModelRepository(session)
@@ -158,16 +158,16 @@ async def save_new_key(message: Message, state: FSMContext):
     api_key = parts[0].strip()
     name = parts[1].strip() if len(parts) > 1 else None
 
-    async with get_session() as session:
+    async with get_shared_session() as session:
         api_key_repo = APIKeyRepository(session)
-        admin_repo = AdminRepository(session)
-
         await api_key_repo.create(
             provider_id=provider_id,
             api_key=api_key,
             name=name
         )
 
+    async with get_session() as session:
+        admin_repo = AdminRepository(session)
         await admin_repo.log_action(
             message.from_user.id,
             "add_api_key",
@@ -181,7 +181,7 @@ async def save_new_key(message: Message, state: FSMContext):
 async def list_keys(callback: CallbackQuery):
     provider_id = int(callback.data.split("_")[2])
 
-    async with get_session() as session:
+    async with get_shared_session() as session:
         api_key_repo = APIKeyRepository(session)
         ai_provider_repo = AIProviderRepository(session)
 
@@ -221,7 +221,7 @@ async def list_keys(callback: CallbackQuery):
 async def manage_key(callback: CallbackQuery):
     key_id = int(callback.data.split("_")[2])
 
-    async with get_session() as session:
+    async with get_shared_session() as session:
         api_key_repo = APIKeyRepository(session)
         key = await api_key_repo.get_by_id(key_id)
 
@@ -268,7 +268,7 @@ async def manage_key(callback: CallbackQuery):
 async def toggle_key(callback: CallbackQuery):
     key_id = int(callback.data.split("_")[2])
 
-    async with get_session() as session:
+    async with get_shared_session() as session:
         api_key_repo = APIKeyRepository(session)
         key = await api_key_repo.get_by_id(key_id)
 
@@ -285,7 +285,7 @@ async def toggle_key(callback: CallbackQuery):
 async def delete_key(callback: CallbackQuery):
     key_id = int(callback.data.split("_")[2])
 
-    async with get_session() as session:
+    async with get_shared_session() as session:
         api_key_repo = APIKeyRepository(session)
         key = await api_key_repo.get_by_id(key_id)
         provider_id = key.provider_id
@@ -302,7 +302,7 @@ async def delete_key(callback: CallbackQuery):
 async def show_models_menu(callback: CallbackQuery):
     provider_id = int(callback.data.split("_")[2])
 
-    async with get_session() as session:
+    async with get_shared_session() as session:
         ai_provider_repo = AIProviderRepository(session)
         model_repo = AIModelRepository(session)
 
@@ -357,7 +357,7 @@ async def request_add_model(callback: CallbackQuery, state: FSMContext):
     await state.update_data(provider_id=provider_id)
     await state.set_state(AdminStates.entering_model_name)
 
-    async with get_session() as session:
+    async with get_shared_session() as session:
         ai_provider_repo = AIProviderRepository(session)
         provider = await ai_provider_repo.get_by_id(provider_id)
 
@@ -402,10 +402,8 @@ async def save_new_model(message: Message, state: FSMContext):
     if display_name == "-":
         display_name = None
 
-    async with get_session() as session:
+    async with get_shared_session() as session:
         model_repo = AIModelRepository(session)
-        admin_repo = AdminRepository(session)
-
         existing_models = await model_repo.get_by_provider(provider_id)
         is_default = len(existing_models) == 0
 
@@ -416,6 +414,8 @@ async def save_new_model(message: Message, state: FSMContext):
             is_default=is_default
         )
 
+    async with get_session() as session:
+        admin_repo = AdminRepository(session)
         await admin_repo.log_action(
             message.from_user.id,
             "add_model",
@@ -433,7 +433,7 @@ async def save_new_model(message: Message, state: FSMContext):
 async def list_models_for_management(callback: CallbackQuery):
     provider_id = int(callback.data.split("_")[2])
 
-    async with get_session() as session:
+    async with get_shared_session() as session:
         model_repo = AIModelRepository(session)
         ai_provider_repo = AIProviderRepository(session)
 
@@ -473,7 +473,7 @@ async def list_models_for_management(callback: CallbackQuery):
 async def show_model_detail(callback: CallbackQuery):
     model_id = int(callback.data.split("_")[2])
 
-    async with get_session() as session:
+    async with get_shared_session() as session:
         model_repo = AIModelRepository(session)
         ai_provider_repo = AIProviderRepository(session)
 
@@ -537,7 +537,7 @@ async def show_model_detail(callback: CallbackQuery):
 async def toggle_model_status(callback: CallbackQuery):
     model_id = int(callback.data.split("_")[2])
 
-    async with get_session() as session:
+    async with get_shared_session() as session:
         model_repo = AIModelRepository(session)
         model = await model_repo.get_by_id(model_id)
 
@@ -556,7 +556,7 @@ async def toggle_model_status(callback: CallbackQuery):
 async def set_default_model(callback: CallbackQuery):
     model_id = int(callback.data.split("_")[3])
 
-    async with get_session() as session:
+    async with get_shared_session() as session:
         model_repo = AIModelRepository(session)
         model = await model_repo.get_by_id(model_id)
 
@@ -571,7 +571,7 @@ async def set_default_model(callback: CallbackQuery):
 async def delete_model(callback: CallbackQuery):
     model_id = int(callback.data.split("_")[2])
 
-    async with get_session() as session:
+    async with get_shared_session() as session:
         model_repo = AIModelRepository(session)
         model = await model_repo.get_by_id(model_id)
 
@@ -606,7 +606,7 @@ async def delete_model(callback: CallbackQuery):
 async def set_default_provider(callback: CallbackQuery):
     provider_id = int(callback.data.split("_")[2])
 
-    async with get_session() as session:
+    async with get_shared_session() as session:
         ai_provider_repo = AIProviderRepository(session)
         await ai_provider_repo.update(provider_id=provider_id, is_default=True)
 
@@ -617,7 +617,7 @@ async def set_default_provider(callback: CallbackQuery):
 async def delete_provider(callback: CallbackQuery):
     provider_id = int(callback.data.split("_")[2])
 
-    async with get_session() as session:
+    async with get_shared_session() as session:
         ai_provider_repo = AIProviderRepository(session)
         provider = await ai_provider_repo.get_by_id(provider_id)
 

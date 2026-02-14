@@ -6,8 +6,12 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
 from config import settings
-from database.database import init_db, close_db
+from database.database import (
+    init_bot_db, init_shared_db, close_all_db,
+    current_bot_db_url, current_support_group_id
+)
 from utils.logger import setup_logger
+from middlewares.bot_db import BotDBMiddleware
 from middlewares.antiflood import AntiFloodMiddleware
 from middlewares.ban_check import BanCheckMiddleware
 from services.pending_service import PendingService
@@ -26,19 +30,14 @@ from handlers.admin import (
 )
 from handlers.group import support
 
-async def main():
-    setup_logger()
-    logger = logging.getLogger(__name__)
 
-    await init_db()
-
-    bot = Bot(
-        token=settings.BOT_TOKEN,
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML)
-    )
-
+def _build_dispatcher(db_url_map: dict) -> Dispatcher:
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
+
+    bot_db_middleware = BotDBMiddleware(db_url_map, settings.SUPPORT_GROUP_ID)
+    dp.message.middleware(bot_db_middleware)
+    dp.callback_query.middleware(bot_db_middleware)
 
     dp.message.middleware(BanCheckMiddleware())
     dp.message.middleware(AntiFloodMiddleware())
@@ -60,17 +59,56 @@ async def main():
     dp.include_router(menu.router)
     dp.include_router(settings_handler.router)
 
-    logger.info("Bot started successfully")
+    return dp
 
-    await PendingService.process_pending_requests(bot)
-    logger.info("Pending requests processed")
+
+async def main():
+    setup_logger()
+    logger = logging.getLogger(__name__)
+
+    await init_shared_db()
+    logger.info("Shared database initialized")
+
+    bot_configs = settings.bot_configs
+    if not bot_configs:
+        logger.error("No bot configurations found. Set BOT1_TOKEN in .env")
+        return
+
+    logger.info(f"Starting {len(bot_configs)} bot(s)...")
+
+    for cfg in bot_configs:
+        await init_bot_db(cfg)
+        logger.info(f"Bot {cfg.index} database initialized")
+
+    bots = [
+        Bot(token=cfg.token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+        for cfg in bot_configs
+    ]
+
+    db_url_map = {cfg.token: cfg.db_url for cfg in bot_configs}
+
+    for bot, cfg in zip(bots, bot_configs):
+        t_db = current_bot_db_url.set(cfg.db_url)
+        t_sg = current_support_group_id.set(settings.SUPPORT_GROUP_ID)
+        try:
+            await PendingService.process_pending_requests(bot)
+            logger.info(f"Bot {cfg.index}: pending requests processed")
+        finally:
+            current_bot_db_url.reset(t_db)
+            current_support_group_id.reset(t_sg)
+
+    dp = _build_dispatcher(db_url_map)
+
+    logger.info(f"All bots started (group: {settings.SUPPORT_GROUP_ID})")
 
     try:
-        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+        await dp.start_polling(*bots, allowed_updates=dp.resolve_used_update_types())
     finally:
-        await close_db()
-        await bot.session.close()
-        logger.info("Bot stopped")
+        for bot in bots:
+            await bot.session.close()
+        await close_all_db()
+        logger.info("All bots stopped")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

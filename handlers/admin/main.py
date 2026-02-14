@@ -14,17 +14,11 @@ router = Router()
 async def cmd_admin(message: Message):
     user_id = message.from_user.id
 
-    from config import settings
-    is_admin_from_env = user_id in settings.admin_ids
-
-    if not is_admin_from_env:
-        async with get_session() as session:
-            user_repo = UserRepository(session)
-            is_admin_from_db = await user_repo.is_admin(user_id)
-
-            if not is_admin_from_db:
-                await message.answer("❌ У вас нет прав администратора.")
-                return
+    async with get_session() as session:
+        user_repo = UserRepository(session)
+        if not await user_repo.is_admin(user_id):
+            await message.answer("❌ У вас нет прав администратора.")
+            return
 
     async with get_session() as session:
         user_repo = UserRepository(session)

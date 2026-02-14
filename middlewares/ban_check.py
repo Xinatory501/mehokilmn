@@ -6,8 +6,6 @@ from aiogram.types import Message
 from database.database import get_session
 from database.repository import UserRepository
 from locales.loader import get_text
-from config import settings
-
 class BanCheckMiddleware(BaseMiddleware):
 
     async def __call__(
@@ -21,8 +19,7 @@ class BanCheckMiddleware(BaseMiddleware):
         async with get_session() as session:
             user_repo = UserRepository(session)
 
-            is_admin = user_id in settings.admin_ids or await user_repo.is_admin(user_id)
-            if is_admin:
+            if await user_repo.is_admin(user_id):
                 return await handler(event, data)
 
             if await user_repo.is_banned(user_id):

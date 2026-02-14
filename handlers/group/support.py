@@ -4,16 +4,16 @@ from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 import logging
 
-from config import settings
-from database.database import get_session
+from database.database import get_session, current_support_group_id
 from database.repository import UserRepository, ChatRepository, TrainingRepository
 from services.ai_service import AIService
 from locales.loader import get_text
+from filters.support_group import IsSupportGroup
 
 logger = logging.getLogger(__name__)
 router = Router()
 
-@router.message(Command("ai"), F.chat.id == settings.SUPPORT_GROUP_ID)
+@router.message(Command("ai"), IsSupportGroup())
 async def activate_ai_in_thread(message: Message):
     thread_id = message.message_thread_id
 
@@ -50,7 +50,7 @@ async def activate_ai_in_thread(message: Message):
     except Exception as e:
         logger.error(f"Failed to notify user {user.id} about AI activation: {e}")
 
-@router.callback_query(F.data.startswith("ai_reply_"), F.message.chat.id == settings.SUPPORT_GROUP_ID)
+@router.callback_query(F.data.startswith("ai_reply_"), IsSupportGroup())
 async def ai_reply_handler(callback: CallbackQuery):
     user_id = int(callback.data.split("_")[2])
 
@@ -105,7 +105,7 @@ async def ai_reply_handler(callback: CallbackQuery):
     thread_id = user.thread_id
     if context_summary:
         await callback.message.bot.send_message(
-            chat_id=settings.SUPPORT_GROUP_ID,
+            chat_id=current_support_group_id.get(),
             message_thread_id=thread_id,
             text=f"📝 <b>Контекст (сжатый):</b>\n{context_summary}",
             parse_mode="HTML"
@@ -127,7 +127,7 @@ async def ai_reply_handler(callback: CallbackQuery):
     ])
 
     await callback.message.bot.send_message(
-        chat_id=settings.SUPPORT_GROUP_ID,
+        chat_id=current_support_group_id.get(),
         message_thread_id=thread_id,
         text=f"🤖 <b>Отправлено с помощью AI:</b>\n\n{response}",
         parse_mode="HTML",
@@ -154,7 +154,7 @@ async def ai_reply_handler(callback: CallbackQuery):
     except Exception as e:
         await callback.message.answer(f"❌ Не удалось отправить сообщение пользователю: {e}")
 
-@router.callback_query(F.data.startswith("resend_to_ai_"), F.message.chat.id == settings.SUPPORT_GROUP_ID)
+@router.callback_query(F.data.startswith("resend_to_ai_"), IsSupportGroup())
 async def resend_to_ai_handler(callback: CallbackQuery):
     async with get_session() as session:
         user_repo = UserRepository(session)
@@ -185,7 +185,7 @@ async def resend_to_ai_handler(callback: CallbackQuery):
         thread_id = user.thread_id
 
         await callback.message.bot.send_message(
-            chat_id=settings.SUPPORT_GROUP_ID,
+            chat_id=current_support_group_id.get(),
             message_thread_id=thread_id,
             text=f"🤖 <b>Пользователь направлен в режим AI</b>\n\nАдминистратор {callback.from_user.first_name} включил автоматические ответы AI для пользователя.",
             parse_mode="HTML"
@@ -201,7 +201,7 @@ async def resend_to_ai_handler(callback: CallbackQuery):
 
     await callback.answer("✅ AI активирован для пользователя", show_alert=True)
 
-@router.callback_query(F.data.startswith("ban_user_"), F.message.chat.id == settings.SUPPORT_GROUP_ID)
+@router.callback_query(F.data.startswith("ban_user_"), IsSupportGroup())
 async def ban_user_handler(callback: CallbackQuery):
     async with get_session() as session:
         user_repo = UserRepository(session)
@@ -229,7 +229,7 @@ async def ban_user_handler(callback: CallbackQuery):
 
         thread_id = user.thread_id
         await callback.message.bot.send_message(
-            chat_id=settings.SUPPORT_GROUP_ID,
+            chat_id=current_support_group_id.get(),
             message_thread_id=thread_id,
             text=f"🚫 <b>Пользователь заблокирован</b>\n\nПользователь {user.first_name} (ID: {user_id}) был заблокирован администратором {callback.from_user.first_name}.",
             parse_mode="HTML"
@@ -246,7 +246,7 @@ async def ban_user_handler(callback: CallbackQuery):
 
         await callback.answer("✅ Пользователь заблокирован", show_alert=True)
 
-@router.message(F.chat.id == settings.SUPPORT_GROUP_ID, F.message_thread_id)
+@router.message(IsSupportGroup(), F.message_thread_id)
 async def handle_support_message(message: Message):
     thread_id = message.message_thread_id
 
@@ -272,24 +272,17 @@ async def handle_support_message(message: Message):
         from sqlalchemy import select
         from database.models import User
 
-        user_repo = UserRepository(session)
-        sender = await user_repo.get_by_id(message.from_user.id)
-
-        if not sender:
-            logger.warning(f"Sender {message.from_user.id} not found in database")
-            return
-
-        if sender.role != "admin":
-            logger.warning(f"Sender {message.from_user.id} is not admin (role: {sender.role})")
-            return
-
         result = await session.execute(
             select(User).where(User.thread_id == thread_id)
         )
         user = result.scalar_one_or_none()
 
         if not user:
-            logger.warning(f"No user found with thread_id {thread_id}")
+            logger.warning(f"No user found with thread_id {thread_id} in this bot's DB, skipping")
+            return
+
+        # Не пересылать юзеру его собственные сообщения обратно
+        if message.from_user.id == user.id:
             return
 
         logger.info(f"Found user {user.id} for thread {thread_id}, sending message")

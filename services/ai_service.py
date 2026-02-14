@@ -4,10 +4,9 @@ from typing import List, Dict, Optional, AsyncGenerator, Tuple
 from openai import AsyncOpenAI, RateLimitError, APIError
 from datetime import datetime, timedelta
 
-from database.models import AIProvider, APIKey, AIModel
+from database.shared_models import AIProvider, APIKey, AIModel
 from database.repository import TrainingRepository, AIProviderRepository, APIKeyRepository, AIModelRepository, UserRepository
-from database.database import get_session
-from config import settings
+from database.database import get_session, get_shared_session, current_support_group_id
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +39,7 @@ class AIService:
 
     @staticmethod
     async def get_service(provider_id: Optional[int] = None) -> Optional['AIService']:
-        async with get_session() as session:
+        async with get_shared_session() as session:
             ai_provider_repo = AIProviderRepository(session)
             api_key_repo = APIKeyRepository(session)
             model_repo = AIModelRepository(session)
@@ -68,7 +67,7 @@ class AIService:
 
     @staticmethod
     async def try_next_key_or_provider(exclude_provider_id: Optional[int] = None) -> Optional[Tuple['AIService', bool]]:
-        async with get_session() as session:
+        async with get_shared_session() as session:
             ai_provider_repo = AIProviderRepository(session)
             api_key_repo = APIKeyRepository(session)
             model_repo = AIModelRepository(session)
@@ -92,17 +91,17 @@ class AIService:
             return None
 
     async def update_key_usage(self):
-        async with get_session() as session:
+        async with get_shared_session() as session:
             api_key_repo = APIKeyRepository(session)
             await api_key_repo.update_usage(self.api_key.id)
 
     async def record_error(self, error_message: str):
-        async with get_session() as session:
+        async with get_shared_session() as session:
             api_key_repo = APIKeyRepository(session)
             await api_key_repo.set_error(self.api_key.id, error_message[:500])
 
     async def record_model_error(self, error_message: str, bot=None):
-        async with get_session() as session:
+        async with get_shared_session() as session:
             model_repo = AIModelRepository(session)
             await model_repo.record_error(self.model.id, error_message[:500])
 
@@ -134,7 +133,7 @@ class AIService:
 
     async def check_and_reset_limit(self):
         if self.api_key.limit_reset_at and self.api_key.limit_reset_at <= datetime.utcnow():
-            async with get_session() as session:
+            async with get_shared_session() as session:
                 api_key_repo = APIKeyRepository(session)
                 new_reset = datetime.utcnow() + timedelta(hours=24)
                 await api_key_repo.reset_limit(self.api_key.id, new_reset)
@@ -238,7 +237,7 @@ RESPONSE LANGUAGE: {language}
             )
             await self.update_key_usage()
 
-            async with get_session() as session:
+            async with get_shared_session() as session:
                 model_repo = AIModelRepository(session)
                 await model_repo.update_last_used(self.model.id)
 
@@ -255,7 +254,7 @@ RESPONSE LANGUAGE: {language}
 
             if is_model_error:
                 await self.record_model_error(error_str, bot)
-                async with get_session() as session:
+                async with get_shared_session() as session:
                     model_repo = AIModelRepository(session)
                     next_model = await model_repo.get_available_model(self.provider.id)
                     if next_model and next_model.id != self.model.id:
@@ -275,7 +274,7 @@ RESPONSE LANGUAGE: {language}
                 if bot and thread_id:
                     try:
                         await bot.send_message(
-                            chat_id=settings.SUPPORT_GROUP_ID,
+                            chat_id=current_support_group_id.get(),
                             message_thread_id=thread_id,
                             text="⚠️ ЛИМИТ AI ЗАКОНЧИЛСЯ\n\nВсе API ключи и модели исчерпаны."
                         )
@@ -301,7 +300,7 @@ RESPONSE LANGUAGE: {language}
             )
             await self.update_key_usage()
 
-            async with get_session() as session:
+            async with get_shared_session() as session:
                 model_repo = AIModelRepository(session)
                 await model_repo.update_last_used(self.model.id)
 
@@ -314,7 +313,7 @@ RESPONSE LANGUAGE: {language}
 
             if is_model_error:
                 await self.record_model_error(error_str, bot)
-                async with get_session() as session:
+                async with get_shared_session() as session:
                     model_repo = AIModelRepository(session)
                     next_model = await model_repo.get_available_model(self.provider.id)
                     if next_model and next_model.id != self.model.id:
