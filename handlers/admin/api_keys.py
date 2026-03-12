@@ -632,3 +632,105 @@ async def delete_provider(callback: CallbackQuery):
 
     await callback.answer("🗑 Провайдер удален", show_alert=True)
     await show_providers_list(callback)
+
+@router.callback_query(F.data == "add_provider")
+async def request_add_provider(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(AdminStates.entering_provider_name)
+
+    await callback.message.answer(
+        "➕ <b>Добавление нового провайдера</b>\n\n"
+        "Шаг 1: Отправьте внутреннее имя провайдера (латинские буквы, без пробелов):\n\n"
+        "<b>Примеры:</b>\n"
+        "• groq\n"
+        "• openai\n"
+        "• openrouter\n"
+        "• deepseek\n"
+        "• anthropic",
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+@router.message(AdminStates.entering_provider_name)
+async def receive_provider_name(message: Message, state: FSMContext):
+    provider_name = message.text.strip().lower()
+
+    if not provider_name.replace("-", "").replace("_", "").isalnum():
+        await message.answer(
+            "❌ Имя провайдера должно содержать только латинские буквы, цифры, дефисы и подчеркивания.\n"
+            "Попробуйте снова:"
+        )
+        return
+
+    await state.update_data(provider_name=provider_name)
+    await state.set_state(AdminStates.entering_provider_display_name)
+
+    await message.answer(
+        f"✅ Внутреннее имя: <code>{provider_name}</code>\n\n"
+        f"Шаг 2: Отправьте отображаемое имя провайдера (как будет показано в админке):\n\n"
+        f"<b>Примеры:</b>\n"
+        f"• Groq\n"
+        f"• OpenAI\n"
+        f"• OpenRouter\n"
+        f"• DeepSeek",
+        parse_mode="HTML"
+    )
+
+@router.message(AdminStates.entering_provider_display_name)
+async def receive_provider_display_name(message: Message, state: FSMContext):
+    display_name = message.text.strip()
+
+    await state.update_data(provider_display_name=display_name)
+    await state.set_state(AdminStates.entering_provider_base_url)
+
+    await message.answer(
+        f"✅ Отображаемое имя: <b>{display_name}</b>\n\n"
+        f"Шаг 3: Это OpenAI-совместимый провайдер?\n\n"
+        f"Если <b>да</b>, отправьте <b>base URL</b> API:\n"
+        f"<b>Примеры:</b>\n"
+        f"• https://api.groq.com/openai/v1\n"
+        f"• https://api.deepseek.com/v1\n"
+        f"• https://api.openrouter.ai/api/v1\n\n"
+        f"Если это стандартный OpenAI (<code>api.openai.com</code>), отправьте: <code>-</code>",
+        parse_mode="HTML"
+    )
+
+@router.message(AdminStates.entering_provider_base_url)
+async def save_new_provider(message: Message, state: FSMContext):
+    data = await state.get_data()
+    provider_name = data.get("provider_name")
+    display_name = data.get("provider_display_name")
+    base_url = message.text.strip()
+
+    if base_url == "-":
+        base_url = None
+
+    async with get_shared_session() as session:
+        ai_provider_repo = AIProviderRepository(session)
+
+        existing_providers = await ai_provider_repo.get_all()
+        is_default = len(existing_providers) == 0
+
+        await ai_provider_repo.create(
+            name=provider_name,
+            display_name=display_name,
+            base_url=base_url,
+            is_default=is_default
+        )
+
+    async with get_session() as session:
+        admin_repo = AdminRepository(session)
+        await admin_repo.log_action(
+            message.from_user.id,
+            "add_provider",
+            details=f"Name: {provider_name}, Display: {display_name}"
+        )
+
+    default_msg = " и установлен как основной" if is_default else ""
+    await message.answer(
+        f"✅ Провайдер <b>{display_name}</b> успешно добавлен{default_msg}!\n\n"
+        f"<b>Внутреннее имя:</b> <code>{provider_name}</code>\n"
+        f"<b>Base URL:</b> <code>{base_url or 'api.openai.com (стандартный)'}</code>\n\n"
+        f"Теперь добавьте API ключи и модели для этого провайдера.",
+        parse_mode="HTML"
+    )
+    await state.clear()

@@ -25,3 +25,7 @@ class AdminStates(StatesGroup):
     entering_api_key = State()
     entering_model_name = State()
     entering_model_display_name = State()
+
+    entering_provider_name = State()
+    entering_provider_display_name = State()
+    entering_provider_base_url = State()

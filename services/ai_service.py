@@ -211,6 +211,9 @@ RESPONSE LANGUAGE: {language}
                 max_tokens=10
             )
             await self.update_key_usage()
+            if not completion.choices:
+                logger.error("API returned empty choices list")
+                return True
             answer = completion.choices[0].message.content.strip().lower()
             return "yes" in answer
         except:
@@ -242,7 +245,7 @@ RESPONSE LANGUAGE: {language}
                 await model_repo.update_last_used(self.model.id)
 
             async for chunk in stream:
-                if chunk.choices[0].delta.content:
+                if chunk.choices and chunk.choices[0].delta.content:
                     yield chunk.choices[0].delta.content
 
         except (RateLimitError, APIError) as e:
@@ -304,6 +307,9 @@ RESPONSE LANGUAGE: {language}
                 model_repo = AIModelRepository(session)
                 await model_repo.update_last_used(self.model.id)
 
+            if not completion.choices:
+                logger.error("API returned empty choices list")
+                return "❌ Ошибка AI: пустой ответ."
             return completion.choices[0].message.content
         except (RateLimitError, APIError) as e:
             error_str = str(e)
@@ -349,6 +355,9 @@ RESPONSE LANGUAGE: {language}
                 max_tokens=2048
             )
             await self.update_key_usage()
+            if not completion.choices:
+                logger.error("API returned empty choices list")
+                return []
             response = completion.choices[0].message.content
             clusters = []
             for line in response.split('\n'):
